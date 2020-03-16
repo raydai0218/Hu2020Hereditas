@@ -1,0 +1,3 @@
+IR24	A50	class.error
+IR24	17	0	0
+A50	0	15	0

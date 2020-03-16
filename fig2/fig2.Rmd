@@ -1,0 +1,95 @@
+---
+title: "fig2 Distinct taxonomic composition of the root microbiota between Nipponbare and IR24"
+author: "Dairui"
+date: "2020/3/16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Clean workspace
+rm(list=ls()) 
+# Load setting and functions
+source("../script/stat_plot_functions.R")
+# Set output directory
+output_dir="./"
+```
+
+```{r}
+# 读入文件
+design = read.table("../data/design.txt", header=T, row.names= 1, sep="\t") 
+design$group = paste(design$genotype,"_",design$site, sep = "")
+pc= read.delim("../data/sum_pc.txt", row.names= 1,  header=T, sep="\t")
+#删除汇总列
+pc = pc[,colnames(pc) != c("All")]
+
+# 绘制样品组内各样品堆叠图
+# 需要合并低丰度门，控制物种分类10种以内颜色展示才可识别
+
+# 按丰度排序，目前门+变形菌纲有33类
+per = pc
+mean_sort = per[(order(-rowSums(per))), ] # decrease sort
+colSums(mean_sort)
+
+# 筛选前9大类，其它归为Low abundance；只剩10组展示提高可读性，其中8为unassigned
+mean_sort=as.data.frame(mean_sort)
+other = colSums(rbind(mean_sort["Unassigned",],mean_sort[11:dim(mean_sort)[1],]))
+mean_sort = mean_sort[rownames(mean_sort)!="Unassigned",]
+mean_sort = mean_sort[1:(10-1), ]
+mean_sort = rbind(mean_sort,other)
+rownames(mean_sort)[10] = c("Others")
+# 可视化前的表格保存，方便以后继续从这里开始使用
+write.table(mean_sort, file="Top10phylum_ProClass.txt", append = F, sep="\t", quote=F, row.names=T, col.names=T)
+# 保存高丰度列表
+topN=rownames(mean_sort)
+
+
+# 数据筛选
+# 图中有6个子图，我们以E图为例进行绘制，即上庄地点(Sz)种植的日本晴Nippobare(A50)时间序列样品进行统计
+
+# 手动筛选实验中子集组
+sub_design = design
+
+# 设置显示顺序，否则按字母排序(11会排在1后面)
+sub_design$group  = factor(sub_design$group, levels=c("IR24_Cp","A50_Cp","IR24_Sz","A50_Sz"))
+
+# 统计本次分析的组数
+print(paste("Number of group: ",length(unique(sub_design$group)),sep="")) # show group numbers
+
+# 实验设计与物种相关丰度表交叉筛选
+idx = rownames(sub_design) %in% colnames(mean_sort) 
+sub_design = sub_design[idx,]
+mean_sort = mean_sort[, rownames(sub_design)] # reorder according to design
+
+
+# 按样品绘图
+
+# 添加图中物种分组
+mean_sort$phylumpro = rownames(mean_sort)
+# 矩阵表格转换为索引表格
+data_all = as.data.frame(melt(mean_sort, id.vars=c("phylumpro")))
+# 添加分组信息
+data_all = merge(data_all, sub_design[c("group")], by.x="variable", by.y = "row.names")
+
+colourCount = length(unique(data_all$phylumpro))
+getPalette = colorRampPalette(brewer.pal(8, "Set1"))
+
+data_all$phylumpro = factor(data_all$phylumpro, levels = c("Acidobacteria","Actinobacteria","Alphaproteobacteria","Bacteroidetes","Betaproteobacteria","Deltaproteobacteria","Firmicutes","Gammaproteobacteria",
+                                                           "Spirochaetes","Others"))
+
+# 按样品绘图
+p = ggplot(data_all, aes(x=variable,  y = value, fill = phylumpro)) + 
+  geom_bar(stat = "identity", width=0.85, position = "fill")+ 
+  scale_y_continuous(labels = scales::percent) + 
+  scale_fill_manual(values = getPalette(colourCount)) +
+  # 分面，进一步按group分组，x轴范围自由否则位置异常，swith设置标签底部，并调置去除图例背景
+  facet_grid( ~ group, scales = "free_x", switch = "x") +  main_theme +
+  # 关闭x轴刻度和标签
+  theme(axis.ticks.x = element_blank(), legend.position="top", axis.text.x = element_blank(), strip.background = element_blank())+
+  xlab("Groups")+ylab("Percentage")           
+
+p
+ggsave("tax_stack_phylumpro_all_sample.pdf", p, width = 10, height = 6)
+
+```
+

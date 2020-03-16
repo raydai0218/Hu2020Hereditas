@@ -1,0 +1,251 @@
+---
+title: "fig5 The co-occurrence networks of Nipponbare and IR24 root microbiota have distinct difference"
+author: "Dairui"
+date: "2020/3/16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Clean workspace
+rm(list=ls()) 
+# Load setting and functions
+source("../script/stat_plot_functions.R")
+# Set output directory
+output_dir="./"
+```
+
+# A. Nipponbare network
+```{r}
+# 计算并输出Pearson相关系数
+##读入丰度数据
+myData <- read.table("A50+.txt", header = T, row.names=1)
+#计算皮尔森相关系数
+cor <- cor(t(myData), method = "pearson")
+p <- corr.test(t(myData))  #计算p值
+pValue <- p$p   #提取p值
+#输出数据
+write.table(cor, "A50+_correlation.txt", quote = F, row.names = T, col.names = T, sep = '\t')
+write.table(pValue, "A50+_pvalue.txt", quote = F, row.names = T, col.names = T, sep = '\t')
+
+# 筛选边和点
+cor <- read.table("A50+_correlation.txt", header = T, row.names=1)
+pv <- read.table("A50+_pvalue.txt", header = T, row.names=1)
+cor$genus <- rownames(cor)
+pv$genus <- rownames(pv)
+##提取上三角矩阵并转换为边文件格式
+cor[lower.tri(cor)] <- 0
+pv[lower.tri(pv)] <- 0
+
+pear.cor <- melt(cor, id.vars = "genus")
+pear.pv <- melt(pv, id.vars = "genus")
+
+pear <- data.frame(source = pear.cor[,1], target = pear.cor[,2], 
+                   pearsonCor = pear.cor[,3], pearsonPV = pear.pv[,3])
+
+pear.trim <- pear[-which(pear[,3] == "0"),] 
+pear.trim <- pear.trim[-which(pear.trim$source == pear.trim$target),] 
+pear.trim$weight <- abs(as.vector(pear.trim[,3]))   #设置边的权重
+
+pear.trim$class <- 0  #设置边的类别
+pear.trim[which(pear.trim[,3] < 0),"class"] <- 2     #2 -> 负相关
+pear.trim[which(pear.trim[,3] > 0),"class"] <- 1     #1 -> 正相关
+# 按相关系数和p值筛选
+pear.result <- pear.trim[which(pear.trim$weight > 0),]
+pear.result <- pear.result[which(pear.trim$pearsonPV < 0.05),]
+pear.result <- pear.result[,c(1,2,5,6)]
+
+##输出边文件
+##txt格式
+write.table(pear.result, "A50+_edge.txt", col.names = T, row.names = F, sep = "\t", quote = F)                              
+##读取节点文件
+node <- read.table("A50+.txt", header = T, sep = '\t', row.names = 1)
+
+##计算节点的权重
+node.result <- data.frame(id = as.character(rownames(node)), weight = rowMeans(node), 
+                          class = rep(1,length(node[,1])))
+
+
+vip_species_list <- read.table("A50+.vip.txt", row.names=NULL, header=F)$V1
+node.result[which(node.result[,1] %in% vip_species_list), 3] <- 2
+
+
+##输出节点文件
+##txt格式
+write.table(node.result, "A50+_node.txt", col.names = T, row.names = F, sep = "\t", quote = F)                             
+# 利用igraph绘制网络图
+##读取边文件与节点文件
+arcf <- read.table("A50+_edge.txt", header = T, row.names=NULL)
+
+allnodes <- read.table("A50+_node.txt", sep = "\t", header = T, row.names = NULL)
+
+arc <- arcf[,1:2]
+unodes <- unique(c(as.character(arc$source), as.character(arc$target)))    ##提取出唯一的节点
+node <- allnodes[allnodes$id %in% unodes,]
+
+##将节点与边存入igraph中构建网络
+g <- graph.empty()
+g <- graph_from_data_frame(arc,vertices = node)
+
+##设置节点与边的属性
+nodeSize <- 0    
+nodeDize <- 1.2
+edgeSize <- 0
+edgeDize <- 0.8
+
+textSize <- 0.4
+arrowSize <- 0
+
+##为节点与边的属性赋值
+# 定点颜色，普通点为灰色，vip点为绿色
+VColor <- c("#636363","#78c679")
+# 边颜色，正相关红色，负相关蓝色
+EColor <- c("#d7301f", "#0570b0")
+V(g)$size <- nodeSize+nodeDize*log10(100000*as.numeric(as.vector(node$weight)))
+V(g)$color <- VColor[node$class]
+V(g)$label.cex <- textSize
+V(g)$frame.color <- "#252525"
+E(g)$width <- edgeSize+2*(edgeDize*abs(as.numeric(as.vector(arcf$weight))))
+E(g)$color <- EColor[arcf$class]
+E(g)$arrow.size <- arrowSize
+
+# 网络可视化
+plot(g)
+set.seed(218)
+plot(g, layout = layout.circle)
+#输出节点连接度文件
+degree.cdtn = data.frame(genus = names(degree(g)), degree = degree(g))
+write.table(degree.cdtn, "A50+_network_degree.txt", col.names = T, row.names = F, quote = F, sep = '\t')
+```
+
+
+# B. IR24 network
+```{r}
+# 计算并输出Pearson相关系数
+##读入丰度数据
+myData <- read.table("IR24+.txt", header = T, row.names=1)
+#计算皮尔森相关系数
+cor <- cor(t(myData), method = "pearson")
+p <- corr.test(t(myData))  #计算p值
+pValue <- p$p   #提取p值
+#输出数据
+write.table(cor, "IR24+_correlation.txt", quote = F, row.names = T, col.names = T, sep = '\t')
+write.table(pValue, "IR24+_pvalue.txt", quote = F, row.names = T, col.names = T, sep = '\t')
+
+# 筛选边和点
+cor <- read.table("IR24+_correlation.txt", header = T, row.names=1)
+pv <- read.table("IR24+_pvalue.txt", header = T, row.names=1)
+cor$genus <- rownames(cor)
+pv$genus <- rownames(pv)
+##提取上三角矩阵并转换为边文件格式
+cor[lower.tri(cor)] <- 0
+pv[lower.tri(pv)] <- 0
+
+pear.cor <- melt(cor, id.vars = "genus")
+pear.pv <- melt(pv, id.vars = "genus")
+
+pear <- data.frame(source = pear.cor[,1], target = pear.cor[,2], 
+                   pearsonCor = pear.cor[,3], pearsonPV = pear.pv[,3])
+
+pear.trim <- pear[-which(pear[,3] == "0"),] 
+pear.trim <- pear.trim[-which(pear.trim$source == pear.trim$target),] 
+pear.trim$weight <- abs(as.vector(pear.trim[,3]))   #设置边的权重
+
+pear.trim$class <- 0  #设置边的类别
+pear.trim[which(pear.trim[,3] < 0),"class"] <- 2     #2 -> 负相关
+pear.trim[which(pear.trim[,3] > 0),"class"] <- 1     #1 -> 正相关
+# 按相关系数和p值筛选
+pear.result <- pear.trim[which(pear.trim$weight > 0),]
+pear.result <- pear.result[which(pear.trim$pearsonPV < 0.05),]
+pear.result <- pear.result[,c(1,2,5,6)]
+
+##输出边文件
+##txt格式
+write.table(pear.result, "IR24+_edge.txt", col.names = T, row.names = F, sep = "\t", quote = F)                              
+##读取节点文件
+node <- read.table("IR24+.txt", header = T, sep = '\t', row.names = 1)
+
+##计算节点的权重
+node.result <- data.frame(id = as.character(rownames(node)), weight = rowMeans(node), 
+                          class = rep(1,length(node[,1])))
+
+
+vip_species_list <- read.table("IR24+.vip.txt", row.names=NULL, header=F)$V1
+node.result[which(node.result[,1] %in% vip_species_list), 3] <- 2
+
+
+##输出节点文件
+##txt格式
+write.table(node.result, "IR24+_node.txt", col.names = T, row.names = F, sep = "\t", quote = F)                             
+# 利用igraph绘制网络图
+##读取边文件与节点文件
+arcf <- read.table("IR24+_edge.txt", header = T, row.names=NULL)
+
+allnodes <- read.table("IR24+_node.txt", sep = "\t", header = T, row.names = NULL)
+
+arc <- arcf[,1:2]
+unodes <- unique(c(as.character(arc$source), as.character(arc$target)))    ##提取出唯一的节点
+node <- allnodes[allnodes$id %in% unodes,]
+
+##将节点与边存入igraph中构建网络
+g <- graph.empty()
+g <- graph_from_data_frame(arc,vertices = node)
+
+##设置节点与边的属性
+nodeSize <- 0    
+nodeDize <- 1.2
+edgeSize <- 0
+edgeDize <- 0.8
+
+textSize <- 0.4
+arrowSize <- 0
+
+##为节点与边的属性赋值
+# 定点颜色，普通点为灰色，vip点为绿色
+VColor <- c("#636363","#78c679")
+# 边颜色，正相关红色，负相关蓝色
+EColor <- c("#d7301f", "#0570b0")
+V(g)$size <- nodeSize+nodeDize*log10(100000*as.numeric(as.vector(node$weight)))
+V(g)$color <- VColor[node$class]
+V(g)$label.cex <- textSize
+V(g)$frame.color <- "#252525"
+E(g)$width <- edgeSize+2*(edgeDize*abs(as.numeric(as.vector(arcf$weight))))
+E(g)$color <- EColor[arcf$class]
+E(g)$arrow.size <- arrowSize
+
+# 网络可视化
+plot(g)
+set.seed(218)
+plot(g, layout = layout.circle)
+#输出节点连接度文件
+degree.cdtn = data.frame(genus = names(degree(g)), degree = degree(g))
+write.table(degree.cdtn, "IR24+_network_degree.txt", col.names = T, row.names = F, quote = F, sep = '\t')
+```
+
+
+# C.热图
+```{r}
+
+#读入节点连接度数据
+degree.A50 <- read.table("A50+_network_degree.txt", header = T)
+degree.IR24 <- read.table("IR24+_network_degree.txt", header = T)
+overGenus <- intersect(as.character(degree.A50[,1]), as.character(degree.IR24[,1]))  #取节点交集
+g1 <- degree.A50[degree.A50[,1] %in% overGenus,]
+g1 <- g1[order(g1[,1]),]
+g2 <- degree.IR24[degree.IR24[,1] %in% overGenus,]
+g2 <- g2[order(g2[,1]),]
+myHeat <- data.frame(A50 = g1[,2], IR24 = g2[,2])  ##构造热图数据
+rownames(myHeat) <- g1[,1]
+#绘制热图
+pheatmap(myHeat)
+
+#自定义颜色
+color = brewer.pal(9,"YlGnBu")
+pheatmap(myHeat, color = color, cluster_cols = F)
+pheatmap(myHeat,filename = "heatmap.pdf", height= 6,color = color,cluster_cols = F)
+
+```
+
+
+
+

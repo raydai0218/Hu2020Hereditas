@@ -1,0 +1,16 @@
+Aeromonadaceae
+Alicyclobacillaceae
+Bacillaceae_1
+Bacillales_Incertae_Sedis_XII
+Coriobacteriaceae
+Cystobacteraceae
+Geobacteraceae
+Ignavibacteriaceae
+Opitutaceae
+Paenibacillaceae_1
+Porphyromonadaceae
+Burkholderiales_incertae_sedis
+Clostridiales_Incertae_Sedis_XII
+Gaiellaceae
+Micromonosporaceae
+Sinobacteraceae

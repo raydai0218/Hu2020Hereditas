@@ -1,0 +1,165 @@
+---
+title: "fig3"
+author: "Dairui"
+date: "2020/3/16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Clean workspace
+rm(list=ls()) 
+# Load setting and functions
+source("../script/stat_plot_functions.R")
+# Set output directory
+output_dir="./"
+```
+
+# A. Nipponbare_enriched OTU Venn plot
+```{r}
+library(VennDiagram)
+num = 2
+data <- read.table(file = "../data/diff.list", sep = "\t", header = T)
+
+A50Cp_E <- data[grepl("\\Cp7_E\\>",data[,2]),1]
+A50Sz_E <- data[grepl("\\Sz7_E\\>",data[,2]),1]
+color_v <- c("#f0932b", "#22a6b3", "darkorange1", "seagreen3", "orchid3")[1:num]
+p <- venn.diagram( 
+  x = list("A50_CP"=A50Cp_E, "A50_SZ"=A50Sz_E),
+  col = "transparent", filename = NULL,
+  fill = color_v, height = 2000, width = 2000,
+  alpha = 0.50,
+  label.col = c("black"),
+  cex = 1, fontfamily = "Helvetica",
+  rotation.degree = 180,#调整图的旋转角度
+  cat.default.pos="outer",
+  cat.pos=(0), margin=0.1,  
+  cat.col = color_v,cat.cex = 1, cat.fontfamily = "Helvetica"
+)
+grid.draw(p)
+```
+
+# B. IR24_enriched OTU Venn plot
+```{r}
+IR24Cp_E <- data[grepl("\\Cp7_D\\>",data[,2]),1]
+IR24Sz_E <- data[grepl("\\Sz7_D\\>",data[,2]),1]
+color_v <- c("#f0932b", "#22a6b3", "darkorange1", "seagreen3", "orchid3")[1:num]
+p <- venn.diagram( 
+  x = list("IR24_CP"=IR24Cp_E, "IR24_SZ"=IR24Sz_E),
+  filename = NULL, col = "transparent", 
+  fill = color_v,
+  alpha = 0.50,height = 2000, width = 2000,
+  label.col = c("black"),
+  cex = 1, fontfamily = "Helvetica",
+  cat.default.pos="outer",
+  cat.pos=c(0), margin=0.1,  
+  cat.col = color_v,cat.cex = 1, cat.fontfamily = "Helvetica"
+)
+grid.draw(p)
+```
+
+输出韦恩图中的共有部分
+
+```{bash venn_number}
+pwd
+cat ../data/A50Hn??7-IR24Hn??7_all.txt | grep 'Enriched' | cut -f 1 | sort | uniq -d > otu_A50_common_specific.txt
+cat ../data/A50Hn??7-IR24Hn??7_all.txt | grep 'Depleted' | cut -f 1 | sort | uniq -d > otu_IR24_common_specific.txt
+```
+
+# C.taxonomy of overlapped OTUs in A
+```{r}
+taxonomy = read.table("../data/taxonomy_8.txt", header=T, row.names=1, sep="\t", comment.char = "", stringsAsFactors = F)
+taxonomy$otu = rownames(taxonomy)
+taxonomy = arrange(taxonomy, Kingdom, Phylum, Class, Order, Family, Genus, Species)
+rownames(taxonomy) = taxonomy$otu
+taxonomy$PhylumPro = taxonomy$Phylum
+taxonomy[taxonomy$PhylumPro %in% "Proteobacteria",]$PhylumPro =  taxonomy[taxonomy$PhylumPro %in% "Proteobacteria",]$Class #将变形菌门转换为纲
+
+# 统计并统一图例
+IR24_enriched = read.table("otu_IR24_common_specific.txt", header=F, sep="\t", stringsAsFactors = F)
+A50_enriched = read.table("otu_A50_common_specific.txt", header=F, sep="\t", stringsAsFactors = F)
+
+# 整理共有OTU所属的门和纲
+all = rbind(IR24_enriched, A50_enriched)
+all = taxonomy[rownames(taxonomy) %in% all$V1,]
+legend = unique(all$PhylumPro)
+
+# 图例选择丰度中排名前10的菌，与图2一致
+per= read.delim("../data/sum_pc.txt", sep = "\t", row.names=1, header=T)
+mean = rowMeans(per)
+per = as.data.frame(mean[order(mean, decreasing = T)])
+top_tax=head(rownames(per), n=10)
+taxonomy[!(taxonomy$PhylumPro %in% top_tax),]$PhylumPro = "Others" 
+
+# 交叉选择，确定图例
+idx = legend %in% top_tax
+legend = legend[idx]
+legend = c(legend, "Others")
+colourCount = length(legend)
+getPalette = colorRampPalette(brewer.pal(8, "Set1"))
+idx = legend %in% top_tax
+legend = legend[idx]
+legend = c(legend, "Others")
+
+# A中共同富集OTU作图
+merge = merge(A50_enriched, taxonomy[,c("PhylumPro"), drop=F], by.x = "V1", by.y = "row.names", all.x=T )
+merge$PhylumPro = factor(merge$PhylumPro, levels = legend)
+
+da_tax = merge
+da_tax$tax = da_tax$PhylumPro
+
+data = data.frame(tax = legend, count = rep(0, length(legend)))
+da_tax$count=rep(1,length(da_tax$tax)) # 统计数量
+sub_tax=da_tax[,c("tax","count")]
+
+sub_tax=rbind.data.frame(sub_tax,data)
+mat_mean <- aggregate(sub_tax[,-1], by=sub_tax[1], FUN=sum) #将相同门纲的OTU相加
+rownames(mat_mean)=mat_mean$tax
+
+nums <- mat_mean$x
+tax = mat_mean$tax
+df <- data.frame(type = tax, nums = nums)  
+
+p <- ggplot(data = df, mapping = aes(x = 'Content', y = nums, fill = type)) + geom_bar(stat = 'identity', position = 'stack', width = 1)  +
+  scale_fill_manual(values = getPalette(colourCount))
+# 画图，调整大小
+label=rep(sum(df$nums),length(df$nums))
+p = p + coord_polar(theta = 'y') + labs(x = '', y = '', title = '') + theme(axis.text = element_blank()) + theme(axis.ticks = element_blank()) + geom_text(aes(x = 0, label = label), size = 3) + theme(panel.background=element_blank(),panel.grid=element_blank())
+p
+ggsave(file=paste("pie_otu_A50Enriched.pdf", sep=""), p, width = 4, height = 2.5, useDingbats=F) 
+```
+
+# D.taxonomy of overlapped OTUs in B
+```{r}
+merge = merge(IR24_enriched, taxonomy[,c("PhylumPro"), drop=F], by.x = "V1", by.y = "row.names", all.x=T )
+merge$PhylumPro = factor(merge$PhylumPro, levels = legend)
+
+da_tax = merge
+da_tax$tax = da_tax$PhylumPro
+
+data = data.frame(tax = legend, count = rep(0, length(legend)))
+da_tax$count=rep(1,length(da_tax$tax)) # 统计数量
+sub_tax=da_tax[,c("tax","count")] 
+
+sub_tax=rbind.data.frame(sub_tax,data)
+mat_mean <- aggregate(sub_tax[,-1], by=sub_tax[1], FUN=sum) #相加
+rownames(mat_mean)=mat_mean$tax
+
+nums <- mat_mean$x
+tax = mat_mean$tax
+df <- data.frame(type = tax, nums = nums)  
+
+p <- ggplot(data = df, mapping = aes(x = 'Content', y = nums, fill = type)) + geom_bar(stat = 'identity', position = 'stack', width = 1)  +
+  scale_fill_manual(values = getPalette(colourCount))
+# 作图
+label=rep(sum(df$nums),length(df$nums))
+p = p + coord_polar(theta = 'y') + labs(x = '', y = '', title = '') + theme(axis.text = element_blank()) + theme(axis.ticks = element_blank()) + geom_text(aes(x = 0, label = label), size = 3) + theme(panel.background=element_blank(),panel.grid=element_blank())
+p
+ggsave(file=paste("pie_otu_IR24Enriched.pdf", sep=""), p, width = 4, height = 2.5, useDingbats=F)
+
+```
+
+
+
+
+

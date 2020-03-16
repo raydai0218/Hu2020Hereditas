@@ -1,0 +1,102 @@
+---
+title: "fig1  Geographic locations and rice genotypes affect the rice root microbiota"
+author: "Dairui"
+date: "2020/3/16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Clean workspace
+rm(list=ls()) 
+# Load setting and functions
+source("../script/stat_plot_functions.R")
+# Set output directory
+output_dir="./"
+```
+
+## A. PCoA plot
+```{r}
+# 读入文件
+design = read.table("../data/design.txt", header=T, row.names= 1, sep="\t") 
+beta = read.delim("../data/bray_curtis.txt", header = T, row.names = 1)
+design$group = paste(design$genotype,"_",design$site, sep = "")
+# 统计分组数
+print(paste("Number of group: ",length(unique(design$group)),sep="")) # show group numbers 4
+# 交叉选择
+idx = rownames(design) %in% rownames(beta)
+sub_design=design[idx,]
+sub_beta=beta[rownames(sub_design),rownames(sub_design)]
+# 检验解释度
+tem_adonis <- adonis(as.dist(sub_beta) ~ genotype*site, data = design, by=NULL,parallel=30)
+tem_adonis
+write.table(tem_adonis$aov.tab, "tem_adonis.txt",sep="\t", quote=F, row.names=T, col.names=T)
+
+# 计算前四轴坐标
+pcoa = cmdscale(sub_beta, k=4, eig=T)
+points = as.data.frame(pcoa$points) # get coordinate string, format to dataframme
+eig = pcoa$eig
+points = cbind(points, design[match(rownames(points),rownames(sub_design)), ])
+points = points[,c(1:4,17)]
+colnames(points) = c("x","y","z","a","group")
+write.table(points,"pcoa_points.txt", quote = F, row.names = T, col.names = T, sep = "\t")
+# 绘图
+p = ggplot(points, aes(x=x, y=y, color=group))
+p = p + geom_point(alpha=.7, size =3) +
+  scale_color_manual(values = c("#e67e22","#e74c3c","#2980b9","#27ae60")) +
+  labs(x=paste("PCo 1 (", format(100 * eig[1] / sum(eig), digits=4), "%)", sep=""),
+       y=paste("PCo 2 (", format(100 * eig[2] / sum(eig), digits=4), "%)", sep=""),
+       title="bray_curtis pcoa") + main_theme
+p
+
+ggsave("pcoa.pdf",p, width = 4, height = 2.5)
+
+```
+
+## B. alpha diversity boxplot
+```{r}
+# 读取数据
+alpha = read.table("../data/index.txt", header = T, row.names = 1)
+
+design$group = factor(design$group, levels = c("IR24_Cp","A50_Cp","IR24_Sz","A50_Sz"))
+# 交叉选择
+idx = rownames(design) %in% rownames(alpha)
+sub_design=design[idx,]
+sub_alpha=alpha[rownames(sub_design),]
+# 检验解释度
+index = merge (sub_design, sub_alpha, by = "row.names")
+rownames(index) = alpha$Row.names
+index = index[,-1]
+
+# sub_function. loop for statiscs and plot for each index
+
+m = "richness"
+model = aov(index[[m]] ~ group, data=index)
+Tukey_HSD = TukeyHSD(model, ordered = TRUE, conf.level = 0.95)
+Tukey_HSD_table = as.data.frame(Tukey_HSD$group) 
+write.table(paste(m, "\n\t", sep=""), file=paste("alpha_",m,".txt",sep=""),append = F, quote = F, eol = "", row.names = F, col.names = F)
+suppressWarnings(write.table(Tukey_HSD_table, file=paste("alpha_",m,".txt",sep=""), append = T, quote = F, sep="\t", eol = "\n", na = "NA", dec = ".", row.names = T, col.names = T))
+
+# LSD test for stat label
+out = LSD.test(model,"group", p.adj="none") # alternative fdr
+stat = out$groups
+index$stat=stat[as.character(index$group),]$groups
+max=max(index[,c(m)])
+min=min(index[,c(m)])
+x = index[,c("group",m)]
+y = x %>% group_by(group) %>% summarise_(Max=paste('max(',m,')',sep=""))
+y=as.data.frame(y)
+rownames(y)=y$group
+index$y=y[as.character(index$group),]$Max + (max-min)*0.05
+
+p = ggplot(index, aes(x=group, y=index[[m]], color=group)) +
+  geom_boxplot(alpha=1, outlier.size=0, size=0.7, width=0.5, fill="transparent", outlier.color = NA) +
+  labs(x="Groups", y=paste(m, "index")) + theme_classic() + main_theme +
+  geom_text(data=index, aes(x=group, y=y, color=group, label= stat)) +
+  geom_jitter( position=position_jitter(0.17), size=1, alpha=0.7)+
+  scale_color_manual(values = c("#34ace0","#ff793f","#34ace0","#ff793f"))
+#
+ggsave(paste("alpha_", m, ".pdf", sep=""), p, width = 5, height = 3)
+p
+```
+
